@@ -35,15 +35,36 @@ class HeuristicAgent(Agent):
     Please check the sample implementation in agents/random_agent.py or agents/human_agent.py for more details.
     """
 
-    # Some simple code to help you with timing. Consider checking 
-    # time_taken during your search and breaking with the best answer
-    # so far when it nears 2 seconds.
+    # Basic heuristic to start:
+    # (my_disc_count - opponent_disc_count) after the move.
     start_time = time.time()
+
+    valid_moves = get_valid_moves(chess_board, player)
+    if not valid_moves:
+      return random_move(chess_board, player)
+
+    best_move = None
+    best_score = -float('inf')
+
+    for move in valid_moves:
+      # time guard: don't exceed 1.999s
+      if time.time() - start_time > 1.999:
+        break
+      sim_board = deepcopy(chess_board)
+      execute_move(sim_board, move, player)
+      my_count = int((sim_board == player).sum())
+      opp_count = int((sim_board == opponent).sum())
+      score = my_count - opp_count
+
+      score = float(score) + float(np.random.uniform(-1e-6, 1e-6))
+
+      if score > best_score:
+        best_score = score
+        best_move = move
+
     time_taken = time.time() - start_time
+    print("HeuristicAgent decision time:", round(time_taken, 4), "s")
 
-    print("My AI's turn took ", time_taken, "seconds.")
-
-    # Dummy return (you should replace this with your actual logic)
-    # Returning a random valid move as an example
-    return random_move(chess_board,player)
-
+    if best_move is None:
+      return random_move(chess_board, player)
+    return best_move
