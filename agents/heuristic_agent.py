@@ -35,36 +35,85 @@ class HeuristicAgent(Agent):
     Please check the sample implementation in agents/random_agent.py or agents/human_agent.py for more details.
     """
 
-    # Basic heuristic to start:
-    # (my_disc_count - opponent_disc_count) after the move.
+    # Iterative-deepening minimax. Using material-only heuristic
+    # at leaf nodes. Stop when elapsed time > 1.9s and return the best move
+    # found at the last fully completed depth.
     start_time = time.time()
+    time_limit = 1.9
 
-    valid_moves = get_valid_moves(chess_board, player)
-    if not valid_moves:
-      return random_move(chess_board, player)
+    def evaluate(board):
+      # material-only heuristic from the root player's perspective
+      my_count = int((board == player).sum())
+      opp_count = int((board == opponent).sum())
+      return float(my_count - opp_count)
 
-    best_move = None
-    best_score = -float('inf')
+    def is_terminal(board):
+      end, p1, p2 = check_endgame(board)
+      return end
 
-    for move in valid_moves:
-      # time guard: don't exceed 1.999s
-      if time.time() - start_time > 1.999:
-        break
-      sim_board = deepcopy(chess_board)
-      execute_move(sim_board, move, player)
-      my_count = int((sim_board == player).sum())
-      opp_count = int((sim_board == opponent).sum())
-      score = my_count - opp_count
+    # minimax returns (value, best_move) where value is from root player's perspective
+    def minimax(board, cur_player, depth):
+      # time check
+      if time.time() - start_time > time_limit:
+        raise TimeoutError()
 
-      score = float(score) + float(np.random.uniform(-1e-6, 1e-6))
+      # terminal or depth limit
+      if depth == 0 or is_terminal(board):
+        return evaluate(board), None
 
-      if score > best_score:
-        best_score = score
-        best_move = move
+      moves = get_valid_moves(board, cur_player)
+      # If no moves, allow pass: opponent moves next. If both have no moves, terminal will be detected above.
+      if not moves:
+        # pass: opponent to play at same depth (do not consume depth)
+        val, _ = minimax(board, 3 - cur_player, depth)
+        return val, None
+
+      best_value = -float('inf') if cur_player == player else float('inf')
+      best_move = None
+
+      for mv in moves:
+        # time check inside loop
+        if time.time() - start_time > time_limit:
+          raise TimeoutError()
+
+        nb = deepcopy(board)
+        execute_move(nb, mv, cur_player)  # mutates nb
+        val, _ = minimax(nb, 3 - cur_player, depth - 1)
+
+        # val is from root player's perspective
+        if cur_player == player:
+          # maximize
+          if val > best_value:
+            best_value = val
+            best_move = mv
+        else:
+          # minimize
+          if val < best_value:
+            best_value = val
+            best_move = mv
+
+      return best_value, best_move
+
+    # iterative deepening
+    last_completed_move = None
+    max_depth = 6  # reasonable cap; iterative deepening will stop earlier on time
+    try:
+      for depth in range(1, max_depth + 1):
+        # time guard before starting a deeper search
+        if time.time() - start_time > time_limit:
+          break
+        val, mv = minimax(chess_board, player, depth)
+        # if minimax completed this depth without TimeoutError, accept its move
+        if mv is not None:
+          last_completed_move = mv
+    except TimeoutError:
+      # time's up: fall back to last completed depth's move
+      pass
 
     time_taken = time.time() - start_time
-    print("HeuristicAgent decision time:", round(time_taken, 4), "s")
+    print(f"HeuristicAgent (minimax) decision time: {time_taken:.4f}s, depth used: {depth if 'depth' in locals() else 0}")
 
-    if best_move is None:
+    if last_completed_move is None:
+      # fallback: pick a random legal move or None if no moves
       return random_move(chess_board, player)
-    return best_move
+    return last_completed_move
