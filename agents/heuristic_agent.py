@@ -110,9 +110,6 @@ class HeuristicAgent(Agent):
       # time's up: fall back to last completed depth's move
       pass
 
-    time_taken = time.time() - start_time
-    print(f"HeuristicAgent (minimax) decision time: {time_taken:.4f}s, depth used: {depth if 'depth' in locals() else 0}")
-
     if last_completed_move is None:
       # fallback: pick a random legal move or None if no moves
       return random_move(chess_board, player)
