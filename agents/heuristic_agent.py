@@ -52,7 +52,7 @@ class HeuristicAgent(Agent):
       return end
 
     # minimax returns (value, best_move) where value is from root player's perspective
-    def minimax(board, cur_player, depth):
+    def minimax(board, cur_player, depth, alpha, beta):
       # time check
       if time.time() - start_time > time_limit:
         raise TimeoutError()
@@ -65,11 +65,17 @@ class HeuristicAgent(Agent):
       # If no moves, allow pass: opponent moves next. If both have no moves, terminal will be detected above.
       if not moves:
         # pass: opponent to play at same depth (do not consume depth)
-        val, _ = minimax(board, 3 - cur_player, depth)
+        val, _ = minimax(board, 3 - cur_player, depth, alpha, beta)
         return val, None
 
       best_value = -float('inf') if cur_player == player else float('inf')
       best_move = None
+
+      # Basic move ordering: prefer duplication moves first
+      def is_duplication(mv):
+        src = mv.get_src(); dst = mv.get_dest()
+        return max(abs(dst[0] - src[0]), abs(dst[1] - src[1])) == 1
+      moves = sorted(moves, key=lambda mv: (not is_duplication(mv)))
 
       for mv in moves:
         # time check inside loop
@@ -78,7 +84,7 @@ class HeuristicAgent(Agent):
 
         nb = deepcopy(board)
         execute_move(nb, mv, cur_player)  # mutates nb
-        val, _ = minimax(nb, 3 - cur_player, depth - 1)
+        val, _ = minimax(nb, 3 - cur_player, depth - 1, alpha, beta)
 
         # val is from root player's perspective
         if cur_player == player:
@@ -86,15 +92,20 @@ class HeuristicAgent(Agent):
           if val > best_value:
             best_value = val
             best_move = mv
+          alpha = max(alpha, best_value)
+          if beta <= alpha:
+            break
         else:
           # minimize
           if val < best_value:
             best_value = val
             best_move = mv
+          beta = min(beta, best_value)
+          if beta <= alpha:
+            break
 
       return best_value, best_move
 
-    # iterative deepening
     last_completed_move = None
     max_depth = 6  # reasonable cap; iterative deepening will stop earlier on time
     try:
@@ -102,7 +113,7 @@ class HeuristicAgent(Agent):
         # time guard before starting a deeper search
         if time.time() - start_time > time_limit:
           break
-        val, mv = minimax(chess_board, player, depth)
+        val, mv = minimax(chess_board, player, depth, -float('inf'), float('inf'))
         # if minimax completed this depth without TimeoutError, accept its move
         if mv is not None:
           last_completed_move = mv
