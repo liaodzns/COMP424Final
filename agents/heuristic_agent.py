@@ -7,6 +7,19 @@ from copy import deepcopy
 import time
 from helpers import random_move, execute_move, check_endgame, get_valid_moves
 
+# Global Zobrist table for hashing (must be global for consistency)
+_ZOBRIST_TABLE = None
+_ZOBRIST_SIZE = None
+
+def _init_zobrist(size):
+  """Initialize Zobrist hashing table for the given board size."""
+  global _ZOBRIST_TABLE, _ZOBRIST_SIZE
+  if _ZOBRIST_TABLE is None or _ZOBRIST_SIZE != size:
+    _ZOBRIST_SIZE = size
+    np.random.seed(42)  # Fixed seed for consistency
+    # Table for each position and each piece type (0=empty, 1=player1, 2=player2, 3=obstacle)
+    _ZOBRIST_TABLE = np.random.randint(0, 2**63, size=(size, size, 4), dtype=np.int64)
+
 @register_agent("heuristic_agent")
 class HeuristicAgent(Agent):
   """
@@ -17,6 +30,9 @@ class HeuristicAgent(Agent):
   def __init__(self):
     super(HeuristicAgent, self).__init__()
     self.name = "HeuristicAgent"
+    # Instance-level TT - fresh for each game, persists across moves within game
+    self.tt = {}
+    self.tt_access_counter = 0
 
   def step(self, chess_board, player, opponent):
     """
@@ -39,7 +55,28 @@ class HeuristicAgent(Agent):
     # at leaf nodes. Stop when elapsed time > 1.9s and return the best move
     # found at the last fully completed depth.
     start_time = time.time()
-    time_limit = 1.85
+    time_limit = 1.9
+    
+    # Initialize Zobrist hashing
+    n = chess_board.shape[0]
+    _init_zobrist(n)
+    
+    # Keep most recent TT entries if it gets too large
+    if len(self.tt) > 100000:
+      # Keep the 50000 most recently accessed entries
+      sorted_entries = sorted(self.tt.items(), 
+                             key=lambda x: x[1].get('last_access', 0), 
+                             reverse=True)
+      self.tt = dict(sorted_entries[:50000])
+    
+    def compute_hash(board):
+      """Compute Zobrist hash for the board."""
+      h = np.int64(0)
+      for piece_val in (1, 2, 3):  # Include obstacles (3)
+        coords = np.argwhere(board == piece_val)
+        for r, c in coords:
+          h ^= _ZOBRIST_TABLE[r, c, piece_val]
+      return h
 
     def evaluate(board, cur_player):
       # Evaluate from cur_player's perspective
@@ -56,10 +93,45 @@ class HeuristicAgent(Agent):
       # time check
       if time.time() - start_time > time_limit:
         raise TimeoutError()
+      
+      # Compute board hash for TT
+      board_hash = compute_hash(board)
+      
+      # TT lookup
+      tt_entry = self.tt.get(board_hash)
+      tt_move = None
+      if tt_entry and tt_entry['depth'] >= depth:
+        # Update access time
+        self.tt_access_counter += 1
+        tt_entry['last_access'] = self.tt_access_counter
+        
+        flag, value = tt_entry['flag'], tt_entry['value']
+        if flag == 'exact':
+          return value, tt_entry.get('best_move')
+        elif flag == 'lower' and value >= beta:
+          return value, tt_entry.get('best_move')
+        elif flag == 'upper' and value <= alpha:
+          return value, tt_entry.get('best_move')
+      
+      # Remember TT move for move ordering
+      if tt_entry:
+        # Update access
+        self.tt_access_counter += 1
+        tt_entry['last_access'] = self.tt_access_counter
+        tt_move = tt_entry.get('best_move')
 
       # terminal or depth limit
       if depth == 0 or is_terminal(board):
-        return evaluate(board, cur_player), None
+        val = evaluate(board, cur_player)
+        self.tt_access_counter += 1
+        self.tt[board_hash] = {
+          'depth': depth, 
+          'value': val, 
+          'flag': 'exact', 
+          'best_move': None,
+          'last_access': self.tt_access_counter
+        }
+        return val, None
 
       moves = get_valid_moves(board, cur_player)
       # If no moves, allow pass: opponent moves next. If both have no moves, terminal will be detected above.
@@ -70,14 +142,42 @@ class HeuristicAgent(Agent):
 
       best_value = -float('inf')
       best_move = None
+      original_alpha = alpha
 
-      # Basic move ordering: prefer duplication moves first
-      def is_duplication(mv):
-        src = mv.get_src(); dst = mv.get_dest()
-        return max(abs(dst[0] - src[0]), abs(dst[1] - src[1])) == 1
-      moves = sorted(moves, key=lambda mv: (not is_duplication(mv)))
+      # Move ordering: TT move first, then duplication moves, then jumps
+      ordered_moves = []
+      
+      # 1. Try TT move first if it exists in current move list
+      if tt_move:
+        for mv in moves:
+          try:
+            if (mv.get_src() == tt_move.get_src() and 
+                mv.get_dest() == tt_move.get_dest()):
+              ordered_moves.append(mv)
+              break
+          except:
+            pass
+      
+      # 2. Sort remaining moves: duplication first (inline to avoid overhead)
+      remaining = [mv for mv in moves if mv not in ordered_moves]
+      dup_moves = []
+      jump_moves = []
+      for mv in remaining:
+        try:
+          src = mv.get_src()
+          dst = mv.get_dest()
+          dist = max(abs(dst[0] - src[0]), abs(dst[1] - src[1]))
+          if dist == 1:
+            dup_moves.append(mv)
+          else:
+            jump_moves.append(mv)
+        except:
+          jump_moves.append(mv)
+      
+      ordered_moves.extend(dup_moves)
+      ordered_moves.extend(jump_moves)
 
-      for mv in moves:
+      for mv in ordered_moves:
         # time check inside loop
         if time.time() - start_time > time_limit:
           raise TimeoutError()
@@ -94,12 +194,29 @@ class HeuristicAgent(Agent):
         alpha = max(alpha, val)
         if alpha >= beta:
           break
+      
+      # Store in TT with appropriate flag
+      if best_value <= original_alpha:
+        flag = 'upper'  # All moves were <= alpha (fail-low)
+      elif best_value >= beta:
+        flag = 'lower'  # We got a cutoff (fail-high)
+      else:
+        flag = 'exact'  # Value is within window
+      
+      self.tt_access_counter += 1
+      self.tt[board_hash] = {
+        'depth': depth,
+        'value': best_value,
+        'flag': flag,
+        'best_move': best_move,
+        'last_access': self.tt_access_counter
+      }
 
       return best_value, best_move
 
     last_completed_move = None
     last_completed_depth = 0
-    max_depth = 10  # iterative deepening will stop earlier on time
+    max_depth = 15  # iterative deepening will stop earlier on time
     try:
       for depth in range(1, max_depth + 1):
         # time guard before starting a deeper search
@@ -114,7 +231,7 @@ class HeuristicAgent(Agent):
       # time's up: fall back to last completed depth's move
       pass
 
-    # print(f"HeuristicAgent: completed depth {last_completed_depth}")
+    print(f"HeuristicAgent: completed depth {last_completed_depth}, TT size: {len(self.tt)}")
 
     if last_completed_move is None:
       # fallback: pick a random legal move or None if no moves
