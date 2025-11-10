@@ -16,7 +16,7 @@ class HeuristicAgentBase(Agent):
 
   def __init__(self):
     super(HeuristicAgentBase, self).__init__()
-    self.name = "HeuristicAgent"
+    self.name = "HeuristicAgentBase"
 
   def step(self, chess_board, player, opponent):
     """
