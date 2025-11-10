@@ -168,7 +168,7 @@ class HeuristicAgent(Agent):
       # time's up: fall back to last completed depth's move
       pass
 
-    print(f"HeuristicAgent: completed depth {last_completed_depth}")
+    # print(f"HeuristicAgent: completed depth {last_completed_depth}")
 
     if last_completed_move is None:
       # fallback: pick a random legal move or None if no moves
