@@ -87,6 +87,41 @@ class HeuristicAgent(Agent):
     def is_terminal(board):
       end, p1, p2 = check_endgame(board)
       return end
+    
+    def order_moves(moves, tt_move):
+      """Order moves: TT move first, then duplications, then jumps."""
+      ordered_moves = []
+      
+      # 1. Try TT move first if it exists in current move list
+      if tt_move:
+        for mv in moves:
+          try:
+            if (mv.get_src() == tt_move.get_src() and 
+                mv.get_dest() == tt_move.get_dest()):
+              ordered_moves.append(mv)
+              break
+          except:
+            pass
+      
+      # 2. Sort remaining moves: duplication first (inline to avoid overhead)
+      remaining = [mv for mv in moves if mv not in ordered_moves]
+      dup_moves = []
+      jump_moves = []
+      for mv in remaining:
+        try:
+          src = mv.get_src()
+          dst = mv.get_dest()
+          dist = max(abs(dst[0] - src[0]), abs(dst[1] - src[1]))
+          if dist == 1:
+            dup_moves.append(mv)
+          else:
+            jump_moves.append(mv)
+        except:
+          jump_moves.append(mv)
+      
+      ordered_moves.extend(dup_moves)
+      ordered_moves.extend(jump_moves)
+      return ordered_moves
 
     # negamax returns (value, best_move) where value is always from cur_player's perspective
     def negamax(board, cur_player, depth, alpha, beta):
@@ -144,38 +179,8 @@ class HeuristicAgent(Agent):
       best_move = None
       original_alpha = alpha
 
-      # Move ordering: TT move first, then duplication moves, then jumps
-      ordered_moves = []
-      
-      # 1. Try TT move first if it exists in current move list
-      if tt_move:
-        for mv in moves:
-          try:
-            if (mv.get_src() == tt_move.get_src() and 
-                mv.get_dest() == tt_move.get_dest()):
-              ordered_moves.append(mv)
-              break
-          except:
-            pass
-      
-      # 2. Sort remaining moves: duplication first (inline to avoid overhead)
-      remaining = [mv for mv in moves if mv not in ordered_moves]
-      dup_moves = []
-      jump_moves = []
-      for mv in remaining:
-        try:
-          src = mv.get_src()
-          dst = mv.get_dest()
-          dist = max(abs(dst[0] - src[0]), abs(dst[1] - src[1]))
-          if dist == 1:
-            dup_moves.append(mv)
-          else:
-            jump_moves.append(mv)
-        except:
-          jump_moves.append(mv)
-      
-      ordered_moves.extend(dup_moves)
-      ordered_moves.extend(jump_moves)
+      # Move ordering
+      ordered_moves = order_moves(moves, tt_move)
 
       for mv in ordered_moves:
         # time check inside loop
@@ -231,31 +236,33 @@ class HeuristicAgent(Agent):
       # time's up: fall back to last completed depth's move
       pass
 
-    # Update rolling average depth statistics
-    stats_file = "depth_stats.txt"
-    try:
-      # Try to read existing stats
-      with open(stats_file, 'r') as f:
-        lines = f.read().strip().split('\n')
-        if len(lines) == 2:
-          avg_depth = float(lines[0])
-          total_moves = int(lines[1])
-        else:
-          avg_depth = 0.0
-          total_moves = 0
-    except (FileNotFoundError, ValueError):
-      avg_depth = 0.0
-      total_moves = 0
+    def update_diagnostics(depth):
+      """Update and print rolling average depth statistics."""
+      stats_file = "depth_stats.txt"
+      try:
+        with open(stats_file, 'r') as f:
+          lines = f.read().strip().split('\n')
+          if len(lines) == 2:
+            avg_depth = float(lines[0])
+            total_moves = int(lines[1])
+          else:
+            avg_depth = 0.0
+            total_moves = 0
+      except (FileNotFoundError, ValueError):
+        avg_depth = 0.0
+        total_moves = 0
+      
+      # Update rolling average
+      total_moves += 1
+      avg_depth = ((avg_depth * (total_moves - 1)) + depth) / total_moves
+      
+      # Write updated stats
+      with open(stats_file, 'w') as f:
+        f.write(f"{avg_depth}\n{total_moves}\n")
+      
+      print(f"HeuristicAgent: completed depth {depth}, TT size: {len(self.tt)}, avg depth: {avg_depth:.2f} over {total_moves} moves")
     
-    # Update rolling average
-    total_moves += 1
-    avg_depth = ((avg_depth * (total_moves - 1)) + last_completed_depth) / total_moves
-    
-    # Write updated stats
-    with open(stats_file, 'w') as f:
-      f.write(f"{avg_depth}\n{total_moves}\n")
-    
-    print(f"HeuristicAgent: completed depth {last_completed_depth}, TT size: {len(self.tt)}, avg depth: {avg_depth:.2f} over {total_moves} moves")
+    update_diagnostics(last_completed_depth)
 
     if last_completed_move is None:
       # fallback: pick a random legal move or None if no moves
