@@ -123,14 +123,46 @@ class HeuristicAgent(Agent):
       ordered_moves.extend(jump_moves)
       return ordered_moves
 
+    def child_hash(parent_board, cur_player, parent_hash, mv):
+      """Compute incremental Zobrist hash for the child position after applying mv.
+      Uses Ataxx rules: duplication (dist=1) keeps src; jump (dist=2) empties src.
+      Then flip all adjacent opponent discs around destination.
+      """
+      h = np.int64(parent_hash)
+      src_r, src_c = mv.get_src()
+      dst_r, dst_c = mv.get_dest()
+      opp = 3 - cur_player
+
+      # Determine duplication vs jump by Chebyshev distance
+      dist = max(abs(dst_r - src_r), abs(dst_c - src_c))
+
+      # For jump, remove piece from source
+      if dist > 1:
+        h ^= _ZOBRIST_TABLE[src_r, src_c, cur_player]
+
+      # Place piece at destination
+      h ^= _ZOBRIST_TABLE[dst_r, dst_c, cur_player]
+
+      # Flip adjacent opponent pieces around destination
+      nrows, ncols = parent_board.shape
+      for dr in (-1, 0, 1):
+        for dc in (-1, 0, 1):
+          if dr == 0 and dc == 0:
+            continue
+          rr = dst_r + dr
+          cc = dst_c + dc
+          if 0 <= rr < nrows and 0 <= cc < ncols:
+            if parent_board[rr, cc] == opp:
+              # XOR out opponent, XOR in current player
+              h ^= _ZOBRIST_TABLE[rr, cc, opp]
+              h ^= _ZOBRIST_TABLE[rr, cc, cur_player]
+      return h
+
     # negamax returns (value, best_move) where value is always from cur_player's perspective
-    def negamax(board, cur_player, depth, alpha, beta):
+    def negamax(board, cur_player, depth, alpha, beta, board_hash):
       # time check
       if time.time() - start_time > time_limit:
         raise TimeoutError()
-      
-      # Compute board hash for TT
-      board_hash = compute_hash(board)
       
       # TT lookup
       tt_entry = self.tt.get(board_hash)
@@ -172,7 +204,7 @@ class HeuristicAgent(Agent):
       # If no moves, allow pass: opponent moves next. If both have no moves, terminal will be detected above.
       if not moves:
         # pass: opponent to play at same depth (do not consume depth)
-        val, _ = negamax(board, 3 - cur_player, depth, -beta, -alpha)
+        val, _ = negamax(board, 3 - cur_player, depth, -beta, -alpha, board_hash)
         return -val, None
 
       best_value = -float('inf')
@@ -189,7 +221,9 @@ class HeuristicAgent(Agent):
 
         nb = board.copy()
         execute_move(nb, mv, cur_player)  # mutates nb
-        val, _ = negamax(nb, 3 - cur_player, depth - 1, -beta, -alpha)
+        # Incremental hash for child
+        child_h = child_hash(board, cur_player, board_hash, mv)
+        val, _ = negamax(nb, 3 - cur_player, depth - 1, -beta, -alpha, child_h)
         val = -val  # Negate because it's from opponent's perspective
 
         if val > best_value:
@@ -223,11 +257,13 @@ class HeuristicAgent(Agent):
     last_completed_depth = 0
     max_depth = 8  # iterative deepening will stop earlier on time
     try:
+      # Compute root hash once
+      root_hash = compute_hash(chess_board)
       for depth in range(1, max_depth + 1):
         # time guard before starting a deeper search
         if time.time() - start_time > time_limit:
           break
-        val, mv = negamax(chess_board, player, depth, -float('inf'), float('inf'))
+        val, mv = negamax(chess_board, player, depth, -float('inf'), float('inf'), root_hash)
         # if negamax completed this depth without TimeoutError, accept its move
         if mv is not None:
           last_completed_move = mv
