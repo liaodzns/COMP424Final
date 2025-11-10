@@ -216,7 +216,7 @@ class HeuristicAgent(Agent):
 
     last_completed_move = None
     last_completed_depth = 0
-    max_depth = 15  # iterative deepening will stop earlier on time
+    max_depth = 8  # iterative deepening will stop earlier on time
     try:
       for depth in range(1, max_depth + 1):
         # time guard before starting a deeper search
@@ -231,7 +231,31 @@ class HeuristicAgent(Agent):
       # time's up: fall back to last completed depth's move
       pass
 
-    print(f"HeuristicAgent: completed depth {last_completed_depth}, TT size: {len(self.tt)}")
+    # Update rolling average depth statistics
+    stats_file = "depth_stats.txt"
+    try:
+      # Try to read existing stats
+      with open(stats_file, 'r') as f:
+        lines = f.read().strip().split('\n')
+        if len(lines) == 2:
+          avg_depth = float(lines[0])
+          total_moves = int(lines[1])
+        else:
+          avg_depth = 0.0
+          total_moves = 0
+    except (FileNotFoundError, ValueError):
+      avg_depth = 0.0
+      total_moves = 0
+    
+    # Update rolling average
+    total_moves += 1
+    avg_depth = ((avg_depth * (total_moves - 1)) + last_completed_depth) / total_moves
+    
+    # Write updated stats
+    with open(stats_file, 'w') as f:
+      f.write(f"{avg_depth}\n{total_moves}\n")
+    
+    print(f"HeuristicAgent: completed depth {last_completed_depth}, TT size: {len(self.tt)}, avg depth: {avg_depth:.2f} over {total_moves} moves")
 
     if last_completed_move is None:
       # fallback: pick a random legal move or None if no moves
