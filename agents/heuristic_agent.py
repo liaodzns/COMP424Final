@@ -41,56 +41,14 @@ class HeuristicAgent(Agent):
     start_time = time.time()
     time_limit = 1.9
 
-    # Precompute offsets once
-    _DUP_OFFSETS = np.array([[dr, dc] for dr in (-1, 0, 1) for dc in (-1, 0, 1) if not (dr == 0 and dc == 0)], dtype=int)
-    _JUMP_OFFSETS = np.array([[dr, dc] for dr in (-2, -1, 0, 1, 2) for dc in (-2, -1, 0, 1, 2) if max(abs(dr), abs(dc)) == 2], dtype=int)
-    _OFFSETS = np.vstack((_DUP_OFFSETS, _JUMP_OFFSETS))
-
-    # Simple cache for opponent mobility to avoid recomputation in evaluate
-    opp_moves_cache = {}
-
-    def _get_opp_moves_cached(bd):
-      # Key by raw bytes; assumes board shape is constant during a game
-      key = bd.tobytes()
-      cached = opp_moves_cache.get(key)
-      if cached is not None:
-        return cached
-      val = _fast_count_valid_moves(bd, opponent)
-      opp_moves_cache[key] = val
-      return val
-
-    def _fast_count_valid_moves(board, player):
-      # board: numpy array; empty squares == 0
-      pieces = np.argwhere(board == player)
-      if pieces.size == 0:
-        return 0
-      n = board.shape[0]
-
-      dests = pieces[:, None, :] + _OFFSETS[None, :, :]  # shape (P, O, 2)
-      r = dests[..., 0]; c = dests[..., 1]
-      in_bounds = (r >= 0) & (r < n) & (c >= 0) & (c < n)
-      if not np.any(in_bounds):
-        return 0
-
-      pr = r[in_bounds]; pc = c[in_bounds]
-      empties_mask = (board[pr, pc] == 0)
-      if not np.any(empties_mask):
-        return 0
-
-      return int(np.count_nonzero(empties_mask))
-
     def evaluate(board):
       # Improved heuristic: material + mobility
       my_count = int((board == player).sum())
       opp_count = int((board == opponent).sum())
 
-      # Opponent Mobility: number of valid moves
-      opp_moves = _get_opp_moves_cached(board)
-
       # Weighted sum
       return (
           1.0 * (my_count - opp_count)
-        - 0.5 * (opp_moves)
       )
 
     def is_terminal(board):
