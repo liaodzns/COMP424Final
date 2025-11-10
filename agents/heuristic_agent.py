@@ -46,14 +46,13 @@ class HeuristicAgent(Agent):
       my_count = int((board == player).sum())
       opp_count = int((board == opponent).sum())
 
-      # Mobility: number of valid moves
-      my_moves = len(get_valid_moves(board, player))
+      # Opponent Mobility: number of valid moves
       opp_moves = len(get_valid_moves(board, opponent))
 
       # Weighted sum (tune weights as needed)
       return (
           1.0 * (my_count - opp_count)
-        + 0.5 * (my_moves - opp_moves)
+        - 0.5 * (opp_moves)
       )
 
     def is_terminal(board):
@@ -116,7 +115,7 @@ class HeuristicAgent(Agent):
       return best_value, best_move
 
     last_completed_move = None
-    max_depth = 6  # reasonable cap; iterative deepening will stop earlier on time
+    max_depth = 10  # iterative deepening will stop earlier on time
     try:
       for depth in range(1, max_depth + 1):
         # time guard before starting a deeper search
@@ -126,9 +125,12 @@ class HeuristicAgent(Agent):
         # if minimax completed this depth without TimeoutError, accept its move
         if mv is not None:
           last_completed_move = mv
+          last_completed_depth = depth
     except TimeoutError:
       # time's up: fall back to last completed depth's move
       pass
+
+    print(f"HeuristicAgent: completed depth {last_completed_depth}")
 
     if last_completed_move is None:
       # fallback: pick a random legal move or None if no moves
