@@ -39,40 +39,36 @@ class HeuristicAgent(Agent):
     # at leaf nodes. Stop when elapsed time > 1.9s and return the best move
     # found at the last fully completed depth.
     start_time = time.time()
-    time_limit = 1.9
+    time_limit = 1.85
 
-    def evaluate(board):
-      # Improved heuristic: material + mobility
-      my_count = int((board == player).sum())
-      opp_count = int((board == opponent).sum())
-
-      # Weighted sum
-      return (
-          1.0 * (my_count - opp_count)
-      )
+    def evaluate(board, cur_player):
+      # Evaluate from cur_player's perspective
+      my_count = int((board == cur_player).sum())
+      opp_count = int((board == (3 - cur_player)).sum())
+      return (my_count - opp_count)
 
     def is_terminal(board):
       end, p1, p2 = check_endgame(board)
       return end
 
-    # minimax returns (value, best_move) where value is from root player's perspective
-    def minimax(board, cur_player, depth, alpha, beta):
+    # negamax returns (value, best_move) where value is always from cur_player's perspective
+    def negamax(board, cur_player, depth, alpha, beta):
       # time check
       if time.time() - start_time > time_limit:
         raise TimeoutError()
 
       # terminal or depth limit
       if depth == 0 or is_terminal(board):
-        return evaluate(board), None
+        return evaluate(board, cur_player), None
 
       moves = get_valid_moves(board, cur_player)
       # If no moves, allow pass: opponent moves next. If both have no moves, terminal will be detected above.
       if not moves:
         # pass: opponent to play at same depth (do not consume depth)
-        val, _ = minimax(board, 3 - cur_player, depth, alpha, beta)
-        return val, None
+        val, _ = negamax(board, 3 - cur_player, depth, -beta, -alpha)
+        return -val, None
 
-      best_value = -float('inf') if cur_player == player else float('inf')
+      best_value = -float('inf')
       best_move = None
 
       # Basic move ordering: prefer duplication moves first
@@ -88,37 +84,29 @@ class HeuristicAgent(Agent):
 
         nb = board.copy()
         execute_move(nb, mv, cur_player)  # mutates nb
-        val, _ = minimax(nb, 3 - cur_player, depth - 1, alpha, beta)
+        val, _ = negamax(nb, 3 - cur_player, depth - 1, -beta, -alpha)
+        val = -val  # Negate because it's from opponent's perspective
 
-        # val is from root player's perspective
-        if cur_player == player:
-          # maximize
-          if val > best_value:
-            best_value = val
-            best_move = mv
-          alpha = max(alpha, best_value)
-          if beta <= alpha:
-            break
-        else:
-          # minimize
-          if val < best_value:
-            best_value = val
-            best_move = mv
-          beta = min(beta, best_value)
-          if beta <= alpha:
-            break
+        if val > best_value:
+          best_value = val
+          best_move = mv
+        
+        alpha = max(alpha, val)
+        if alpha >= beta:
+          break
 
       return best_value, best_move
 
     last_completed_move = None
+    last_completed_depth = 0
     max_depth = 10  # iterative deepening will stop earlier on time
     try:
       for depth in range(1, max_depth + 1):
         # time guard before starting a deeper search
         if time.time() - start_time > time_limit:
           break
-        val, mv = minimax(chess_board, player, depth, -float('inf'), float('inf'))
-        # if minimax completed this depth without TimeoutError, accept its move
+        val, mv = negamax(chess_board, player, depth, -float('inf'), float('inf'))
+        # if negamax completed this depth without TimeoutError, accept its move
         if mv is not None:
           last_completed_move = mv
           last_completed_depth = depth
