@@ -42,14 +42,10 @@ class HeuristicAgentBase(Agent):
     time_limit = 1.9
 
     def evaluate(board):
-      # Improved heuristic: material + mobility
       my_count = int((board == player).sum())
       opp_count = int((board == opponent).sum())
 
-      # Weighted sum
-      return (
-          1.0 * (my_count - opp_count)
-      )
+      return (my_count - opp_count)
 
     def is_terminal(board):
       end, p1, p2 = check_endgame(board)
