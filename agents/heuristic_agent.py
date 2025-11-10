@@ -46,6 +46,19 @@ class HeuristicAgent(Agent):
     _JUMP_OFFSETS = np.array([[dr, dc] for dr in (-2, -1, 0, 1, 2) for dc in (-2, -1, 0, 1, 2) if max(abs(dr), abs(dc)) == 2], dtype=int)
     _OFFSETS = np.vstack((_DUP_OFFSETS, _JUMP_OFFSETS))
 
+    # Simple cache for opponent mobility to avoid recomputation in evaluate
+    opp_moves_cache = {}
+
+    def _get_opp_moves_cached(bd):
+      # Key by raw bytes; assumes board shape is constant during a game
+      key = bd.tobytes()
+      cached = opp_moves_cache.get(key)
+      if cached is not None:
+        return cached
+      val = _fast_count_valid_moves(bd, opponent)
+      opp_moves_cache[key] = val
+      return val
+
     def _fast_count_valid_moves(board, player):
       # board: numpy array; empty squares == 0
       pieces = np.argwhere(board == player)
@@ -72,7 +85,7 @@ class HeuristicAgent(Agent):
       opp_count = int((board == opponent).sum())
 
       # Opponent Mobility: number of valid moves
-      opp_moves = _fast_count_valid_moves(board, opponent)
+      opp_moves = _get_opp_moves_cached(board)
 
       # Weighted sum
       return (
