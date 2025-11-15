@@ -126,7 +126,7 @@ class MCTSNode():
       return self.best_child().get_parent_action()
 
 
-@register_agent("MCTS_agent")
+@register_agent("mcts_agent")
 class MCTSAgent(Agent):
   """
   A class for your implementation. Feel free to use this class to
