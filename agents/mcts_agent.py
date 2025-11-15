@@ -126,7 +126,7 @@ class MCTSNode():
       return self.best_child().get_parent_action()
 
 
-@register_agent("MCTS_agent_basic")
+@register_agent("MCTS_agent")
 class MCTSAgent(Agent):
   """
   A class for your implementation. Feel free to use this class to
@@ -135,7 +135,7 @@ class MCTSAgent(Agent):
 
   def __init__(self):
     super(MCTSAgent, self).__init__()
-    self.name = "MCTSAgentBasic"
+    self.name = "MCTSAgent"
 
   def step(self, chess_board, player, opponent):
     """
