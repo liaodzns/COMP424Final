@@ -6,3 +6,4 @@ from .heuristic_agent import HeuristicAgent
 from .heuristic_agent_basic import HeuristicAgentBasic
 from .heuristic_agent_base import HeuristicAgentBase
 from .alphabeta_agent import AlphabetaAgent
+from .mcts_agent import MCTSAgent
