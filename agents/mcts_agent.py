@@ -28,17 +28,15 @@ Other fields:
     int number_of_visits: is the total number of times this node has been visited
     int wins: is a mapping of the number of wins (incremented by one each win) achieved by the node over all trials
     MoveCoordinates array untried_actions: is an array of the legal actions that we have not yet applied to this node    
-    int root_player: keeps track of the root player for maximizing/minimizing in UCT
     
 References:  
 - https://arxiv.org/pdf/2103.04931
 - https://ai-boson.github.io/mcts/    
 """
 class MCTSNode():
-    def __init__(self, state, player, root_player, parent=None, parent_action=None):
+    def __init__(self, state, player, parent=None, parent_action=None):
         self.state = state
         self.player = player
-        self.root_player = root_player
         self.parent = parent
         self.parent_action = parent_action
         self.children = []
@@ -48,18 +46,18 @@ class MCTSNode():
 
     # Expands the selected non-terminal node over all applicable actions and appends the children 
     def expand(self):
-      while self.untried_actions:
-        action = self.untried_actions.pop()
-        next_state = deepcopy(self.state)
-        try:
-          execute_move(next_state, action, self.player)
-        except Exception: # Catches and skips invalid moves raised as exceptions in helper.py
-          continue
-        next_player = 3 - self.player # Switch between player 1 and player 2
-        child = MCTSNode(next_state, player=next_player, root_player=self.root_player, parent=self, parent_action=action)
-        self.children.append(child)
-        return child
-      return self # Base case: this node is terminal node
+      # while self.untried_actions:
+      action = self.untried_actions.pop()
+      next_state = deepcopy(self.state)
+      #  try:
+      execute_move(next_state, action, self.player)
+      #  except Exception: # Catches and skips invalid moves raised as exceptions in helper.py
+      #    continue
+      next_player = 3 - self.player # Switch between player 1 and player 2
+      child = MCTSNode(next_state, player=next_player, parent=self, parent_action=action)
+      self.children.append(child)
+      return child
+      # return self # Base case: this node is terminal node
       
     # Returns true or false if a given node is terminal or not
     def is_terminal_node(self):
@@ -73,26 +71,24 @@ class MCTSNode():
       while True:
         is_endgame, p0_score, p1_score = check_endgame(curr_rollout_state)
         if is_endgame:
-          break
+           return 1 if p0_score > p1_score else 2 # player 1 won else player 2 won
 
-        legal_actions = get_valid_moves(curr_rollout_state, curr_player)
-        if legal_actions:
-          action = self.default_policy(legal_actions)
-          try:
-            execute_move(curr_rollout_state, action, curr_player)
-          except Exception: # Catches and skips invalid moves raised as exceptions in helper.py
-            pass  
-        curr_player = 3 - curr_player
+        legal_moves = get_valid_moves(curr_rollout_state, curr_player)
+        if not legal_moves:
+          curr_player = 3 - curr_player
+        else:
+          action = self.default_policy(legal_moves)
+          execute_move(curr_rollout_state, action, curr_player)
+          # Switch players
+          curr_player = 3 - curr_player 
 
-      if p0_score > p1_score:
-        return 1
-      else:
-        return 2
-
+    def get_player(self):
+      return self.player
+    
     # Backpropagates the results of simulation to each node
     def backpropagate(self, winner):
       self.number_of_visits += 1
-      if self.root_player == winner:
+      if self.player == winner:
         self.wins += 1
       if self.parent:
         self.parent.backpropagate(winner) # recursive call, back propagates win resp. of parent
@@ -105,12 +101,13 @@ class MCTSNode():
     
     # Tree policy uses UCT to select best child to expand
     def best_child(self, C=np.sqrt(2)):
-      if self.player == self.root_player: # Maximize max player move
-        Qs = [(child.q() / child.n()) + C * np.sqrt(np.log(self.n()) / child.n()) for child in self.children]
-        return self.children[np.argmax(Qs)]
-      else: # Minimize min player move
-        Qs = [(child.q() / child.n()) - C * np.sqrt(np.log(self.n()) / child.n()) for child in self.children]
-        return self.children[np.argmin(Qs)]
+      Qs = []
+      for child in self.children:
+        if child.n() == 0: # prioritize exploration
+          Qs.append(float('inf'))
+        else: # Calculate UTC score
+          Qs.append((child.q() / child.n()) + C * np.sqrt(np.log(self.n()) / child.n()))
+      return self.children[np.argmax(Qs)] # Select the child with maximal UTC score
       
     # Default policy: randomly selects an action to take
     def default_policy(self, legal_actions):
@@ -125,9 +122,8 @@ class MCTSNode():
       while not curr_node.is_terminal_node():
         if not curr_node.is_fully_expanded():
           return curr_node.expand()
-        if not curr_node.children():
-          return curr_node
-        curr_node = curr_node.best_child()
+        else:
+          curr_node = curr_node.best_child()
       return curr_node
     
     def get_parent_action(self):
@@ -135,17 +131,21 @@ class MCTSNode():
 
     # Finds the best move in n simulations via the four step MCTS process: Select -> Expand -> Simulate -> Backpropagate
     # Simulates until just before the time limit (.05 seconds before time limit of 2 by default)
-    def best_action(self, time_limit=1.95):
+    def best_action(self, time_limit=5):
       start_time = time.time()
       while True:
         if time.time() - start_time > time_limit:
           break
         v = self.tree_policy()
+        # print(v.state)
         winner = v.rollout()
+        # print("Finished simulating")
         v.backpropagate(winner)
+        # print("Finished backpropagating")
       # Pick the most visited child as the best move
-      most_visited_child = max(self.children, key=lambda c: c.n())
-      return most_visited_child.get_parent_action()
+      return self.best_child(C=0).get_parent_action()
+      # most_visited_child = max(self.children, key=lambda c: c.n())
+      # return most_visited_child.get_parent_action()
 
 
 @register_agent("mcts_agent")
@@ -176,7 +176,7 @@ class MCTSAgent(Agent):
     Please check the sample implementation in agents/random_agent.py or agents/human_agent.py for more details.
     """
 
-    root = MCTSNode(state=chess_board, player=player, root_player=player)
+    root = MCTSNode(state=chess_board, player=player)
     best_move = root.best_action()
 
     if best_move is None:
