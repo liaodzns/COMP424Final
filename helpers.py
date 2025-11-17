@@ -124,11 +124,11 @@ def count_disc_count_change(chess_board, move_coords: MoveCoordinates, player: i
         The change in player disc count from this move.
         -1 indicates any form of invalid move.
     """
-    opponent_map = {0: 1, 1: 0} # This lets us quickly access the value corresponding to the opponent on the board based on current player number
+    opponent_map = {1: 2, 2: 1} # This lets us quickly access the value corresponding to the opponent on the board based on current player number
 
     r_dest, c_dest = move_coords.get_dest()
 
-    if not check_move_validity(chess_board, move_coords):
+    if not check_move_validity(chess_board, move_coords, player):
         return -1
     
     discs_gained = 0
@@ -139,14 +139,14 @@ def count_disc_count_change(chess_board, move_coords: MoveCoordinates, player: i
 
         # Check if adjacent tile is on the board
         if not (0 <= adj_tile[0] < chess_board.shape[0] and 0 <= adj_tile[1] < chess_board.shape[0]):
-            return -1
+            continue
 
         # If the tile, is an opponent, count it
-        if chess_board[adj_tile[0], adj_tile[1]] == opponent_map(player):
+        if chess_board[adj_tile[0], adj_tile[1]] == opponent_map[player]:
             discs_gained += 1
 
     # If the move is single tile, count an extra disc for "duplication"
-    r_src, c_src = move_coords.get_dest()
+    r_src, c_src = move_coords.get_src()
     if not ( (np.abs(r_dest - r_src) == 2) or (np.abs(c_dest - c_src) == 2) ):
         discs_gained += 1
 
