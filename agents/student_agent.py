@@ -20,16 +20,16 @@ def _init_zobrist(size):
     # Table for each position and each piece type (0=empty, 1=player1, 2=player2, 3=obstacle)
     _ZOBRIST_TABLE = np.random.randint(0, 2**63, size=(size, size, 4), dtype=np.int64)
 
-@register_agent("heuristic_agent")
-class HeuristicAgent(Agent):
+@register_agent("student_agent")
+class StudentAgent(Agent):
   """
   A class for your implementation. Feel free to use this class to
   add any helper functionalities needed for your agent.
   """
 
   def __init__(self):
-    super(HeuristicAgent, self).__init__()
-    self.name = "HeuristicAgent"
+    super(StudentAgent, self).__init__()
+    self.name = "StudentAgent"
     # Fresh TT for each game, persists across moves within games
     self.tt = {}
     self.tt_access_counter = 0
