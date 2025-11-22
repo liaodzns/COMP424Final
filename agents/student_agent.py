@@ -37,11 +37,11 @@ class StudentAgent(Agent):
   def step(self, chess_board, player, opponent):
     """ 
     Iterative-deepening minimax. Using material-only heuristic at leaf 
-    nodes. Stop when elapsed time > 1.9s and return the best move found
+    nodes. Stop when elapsed time > 1.85s and return the best move found
     at the last fully completed depth.
     """
     start_time = time.time()
-    time_limit = 1.9
+    time_limit = 1.85  # More conservative to account for overhead
     
     # Initialize Zobrist hashing
     n = chess_board.shape[0]
@@ -180,6 +180,11 @@ class StudentAgent(Agent):
         return val, None
 
       moves = get_valid_moves(board, cur_player)
+      
+      # Time check after move generation (can be expensive)
+      if time.time() - start_time > time_limit:
+        raise TimeoutError()
+      
       # If no moves, allow pass: opponent moves next
       if not moves:
         val, _ = negamax(board, 3 - cur_player, depth, -beta, -alpha, board_hash)
@@ -191,6 +196,10 @@ class StudentAgent(Agent):
 
       # Move ordering
       ordered_moves = order_moves(moves, tt_move)
+      
+      # Time check after move ordering (can also be expensive for many moves)
+      if time.time() - start_time > time_limit:
+        raise TimeoutError()
 
       for mv in ordered_moves:
         # time check inside loop
@@ -234,13 +243,34 @@ class StudentAgent(Agent):
     last_completed_move = None
     last_completed_depth = 0
     max_depth = 8  # iterative deepening will stop earlier on time
+    depth_times = []  # Track time per depth for prediction
+    
     try:
       # Compute root hash once
       root_hash = compute_hash(chess_board)
       for depth in range(1, max_depth + 1):
-        if time.time() - start_time > time_limit:
+        # Check if we have enough time left
+        elapsed = time.time() - start_time
+        if elapsed > time_limit:
           break
+        
+        # Don't start a new depth if we've used >75% of our budget
+        # This prevents starting expensive depths with little time left
+        if elapsed > time_limit * 0.75 and depth > 1:
+          break
+        
+        # If we have timing history, predict if next depth will fit
+        if len(depth_times) >= 2 and depth > 2:
+          # Assume next depth takes ~3-5x longer than previous (branching factor)
+          predicted_time = depth_times[-1] * 4
+          if elapsed + predicted_time > time_limit:
+            break
+        
+        depth_start = time.time()
         val, mv = negamax(chess_board, player, depth, -float('inf'), float('inf'), root_hash)
+        depth_elapsed = time.time() - depth_start
+        depth_times.append(depth_elapsed)
+        
         # if negamax completed this depth without TimeoutError, accept its move
         if mv is not None:
           last_completed_move = mv
@@ -248,6 +278,9 @@ class StudentAgent(Agent):
     except TimeoutError:
       pass
 
+    # Safety check: ensure we're returning within time limit
+    final_elapsed = time.time() - start_time
+    
     if last_completed_move is None:
       # fallback: pick a random legal move or None if no moves
       return random_move(chess_board, player)
