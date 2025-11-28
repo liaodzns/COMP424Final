@@ -231,14 +231,14 @@ class MCTSNode:
 
 
 @register_agent("mcts_agent_ta")
-class StudentAgent(Agent):
+class MCTSAgentTA(Agent):
   """
   A class for your implementation. Feel free to use this class to
   add any helper functionalities needed for your agent.
   """
 
   def __init__(self):
-    super(StudentAgent, self).__init__()
+    super(MCTSAgentTA, self).__init__()
     self.name = "MCTSAgent"
 
   def step(self, chess_board, player, opponent):
