@@ -230,7 +230,7 @@ class MCTSNode:
     return best_child.parent_action
 
 
-@register_agent("mcts_agent")
+@register_agent("mcts_agent_ta")
 class StudentAgent(Agent):
   """
   A class for your implementation. Feel free to use this class to
